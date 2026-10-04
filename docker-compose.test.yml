@@ -1,0 +1,50 @@
+# Docker Compose KHUSUS PENGUJIAN.
+# Menjalankan unit test + integrasi PostgreSQL di dalam container.
+#
+# Cara pakai (dari root project):
+#   docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test
+#
+# Hentikan & bersihkan:
+#   docker compose -f docker-compose.test.yml down -v
+
+services:
+  # Database uji (ephemeral, tanpa volume -> selalu bersih)
+  test-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: longsor
+    # Skema otomatis diterapkan saat DB pertama kali dibuat.
+    volumes:
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d longsor"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  # Runner pengujian
+  test:
+    image: golang:1.24
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      # Arahkan ke service test-db (nama host = nama service)
+      TEST_DATABASE_URL: "postgres://postgres:postgres@test-db:5432/longsor?sslmode=disable"
+      CGO_ENABLED: "1" # agar -race berjalan
+      GOFLAGS: "-mod=mod"
+    depends_on:
+      test-db:
+        condition: service_healthy
+    # gofmt check -> vet -> test (dengan race & cover)
+    command: >
+      sh -c "
+        echo '=== 1. gofmt check ===' &&
+        test -z \"$$(gofmt -l .)\" || (gofmt -l . && exit 1) &&
+        echo '=== 2. go vet ===' &&
+        go vet ./... &&
+        echo '=== 3. go test -race -cover ===' &&
+        go test -race ./... -cover
+      "

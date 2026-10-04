@@ -1,0 +1,806 @@
+openapi: 3.1.0
+info:
+  title: API Peringatan Dini Bencana Longsor — Jawa Tengah
+  version: 1.0.0
+  description: |
+    API untuk memantau, menganalisis, dan menyebarkan peringatan dini tanah longsor
+    di provinsi Jawa Tengah.
+
+    - **Sumber data hujan:** BMKG (data terbuka)
+    - **Kanal notifikasi:** WhatsApp & SMS (mode log untuk belajar)
+    - **Metode risiko:** rule-based (ambang hujan + kerawanan wilayah)
+    - **Keamanan:** JWT + refresh token, RBAC, UU PDP (consent, enkripsi PII)
+
+    Autentikasi: kirim `Authorization: Bearer <access_token>`.
+    Access token diperoleh dari `POST /v1/auth/login`.
+  contact:
+    name: Tim API Peringatan Dini Longsor
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Lokal / pengembangan
+  - url: https://api.example.go.id
+    description: Produksi
+
+tags:
+  - name: Health
+  - name: Regions
+  - name: Risk
+  - name: Rainfall
+  - name: Alerts
+  - name: Reports
+  - name: Subscriptions
+  - name: Auth
+  - name: Audit
+
+paths:
+  /:
+    get:
+      tags: [Health]
+      summary: Info singkat API
+      operationId: getRoot
+      security: []
+      responses:
+        "200":
+          description: Informasi API
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  version: { type: string }
+                  docs: { type: string }
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: Layanan sehat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  time: { type: string, format: date-time }
+                  env: { type: string, example: development }
+              example:
+                status: ok
+                time: "2026-10-04T08:00:00+07:00"
+                env: development
+
+  /v1/regions:
+    get:
+      tags: [Regions]
+      summary: Daftar wilayah
+      operationId: listRegions
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+      responses:
+        "200":
+          description: Daftar wilayah terpaginasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedMeta"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Region" }
+
+  /v1/regions/{id}:
+    get:
+      tags: [Regions]
+      summary: Detail wilayah
+      operationId: getRegion
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/RegionId"
+      responses:
+        "200":
+          description: Detail wilayah
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Region" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/regions/{id}/risk:
+    get:
+      tags: [Risk]
+      summary: Risiko longsor terkini wilayah
+      operationId: getRegionRisk
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/RegionId"
+      responses:
+        "200":
+          description: Hasil perhitungan risiko terkini
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RiskResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/regions/{id}/forecast:
+    get:
+      tags: [Risk]
+      summary: Prakiraan risiko sederhana (rule-based)
+      operationId: getRegionForecast
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/RegionId"
+      responses:
+        "200":
+          description: Prakiraan risiko
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  region_id: { type: string }
+                  region_name: { type: string }
+                  current_level: { type: string, example: SIAGA }
+                  forecast_24h_mm: { type: number, example: 42.5 }
+                  potential_level: { type: string, example: SIAGA }
+                  generated_at: { type: string, format: date-time }
+                  note: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/rainfall:
+    get:
+      tags: [Rainfall]
+      summary: Data curah hujan seluruh wilayah
+      operationId: listRainfall
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+      responses:
+        "200":
+          description: Daftar data curah hujan
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedMeta"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/RainfallData" }
+
+  /v1/alerts:
+    get:
+      tags: [Alerts]
+      summary: Daftar peringatan
+      operationId: listAlerts
+      security: []
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [active] }
+          description: Filter hanya peringatan aktif
+        - name: level
+          in: query
+          schema: { type: string, example: "3,4" }
+          description: Filter level (dipisah koma), mis. 3,4
+        - name: region_id
+          in: query
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+      responses:
+        "200":
+          description: Daftar peringatan terpaginasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedMeta"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Alert" }
+    post:
+      tags: [Alerts]
+      summary: Terbitkan peringatan manual
+      description: Butuh role `officer` atau `admin`.
+      operationId: createAlert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAlertRequest" }
+      responses:
+        "201":
+          description: Peringatan dibuat
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Alert" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /v1/alerts/{id}:
+    get:
+      tags: [Alerts]
+      summary: Detail peringatan
+      operationId: getAlert
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/AlertId"
+      responses:
+        "200":
+          description: Detail peringatan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Alert" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Alerts]
+      summary: Ubah status peringatan
+      description: Butuh role `officer` atau `admin`.
+      operationId: updateAlert
+      parameters:
+        - $ref: "#/components/parameters/AlertId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [active, expired, cancelled] }
+      responses:
+        "200":
+          description: Peringatan diperbarui
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Alert" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/reports:
+    get:
+      tags: [Reports]
+      summary: Daftar laporan warga
+      description: Butuh login. Nomor HP pelapor tidak dikembalikan.
+      operationId: listReports
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+      responses:
+        "200":
+          description: Daftar laporan terpaginasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedMeta"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Report" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Reports]
+      summary: Kirim laporan warga
+      operationId: createReport
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateReportRequest" }
+      responses:
+        "201":
+          description: Laporan diterima (status pending)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Report" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /v1/reports/{id}/verify:
+    patch:
+      tags: [Reports]
+      summary: Verifikasi laporan
+      description: Butuh role `officer` atau `admin`.
+      operationId: verifyReport
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [verified, rejected] }
+      responses:
+        "200":
+          description: Laporan diverifikasi
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Report" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/subscriptions:
+    get:
+      tags: [Subscriptions]
+      summary: Daftar langganan
+      description: Butuh login.
+      operationId: listSubscriptions
+      parameters:
+        - name: region_id
+          in: query
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+      responses:
+        "200":
+          description: Daftar langganan terpaginasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedMeta"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Subscription" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Subscriptions]
+      summary: Berlangganan peringatan
+      description: Consent wajib `true` (UU PDP No. 27/2022).
+      operationId: createSubscription
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSubscriptionRequest" }
+      responses:
+        "201":
+          description: Langganan dibuat
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Subscription" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /v1/subscriptions/{id}:
+    delete:
+      tags: [Subscriptions]
+      summary: Hapus langganan (hak subjek data)
+      description: Butuh login.
+      operationId: deleteSubscription
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Langganan dihapus
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      description: Mengembalikan access token + refresh token.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string, example: petugas }
+                password: { type: string, format: password, example: petugas123 }
+      responses:
+        "200":
+          description: Login berhasil
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenPair" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Perbarui token (rotasi)
+      description: Refresh token lama langsung tidak berlaku setelah dipakai.
+      operationId: refresh
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: Token baru
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenPair" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout (cabut token)
+      description: Mencabut access token + refresh token terkait.
+      operationId: logout
+      responses:
+        "200":
+          description: Logout berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: logged_out }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Info pengguna saat ini
+      operationId: me
+      responses:
+        "200":
+          description: Identitas pengguna
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id: { type: string }
+                  role: { type: string, enum: [public, reporter, officer, admin, device] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/risk/evaluate:
+    post:
+      tags: [Risk]
+      summary: Evaluasi risiko seluruh wilayah
+      description: Butuh role `officer` atau `admin`.
+      operationId: evaluateRisk
+      responses:
+        "200":
+          description: Hasil evaluasi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  evaluated: { type: integer }
+                  actions:
+                    type: array
+                    items: { type: string }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/RiskAssessment" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/risk/sync:
+    post:
+      tags: [Risk]
+      summary: Tarik data BMKG lalu evaluasi
+      description: Butuh role `officer` atau `admin`. Optional filter satu wilayah.
+      operationId: syncRisk
+      parameters:
+        - name: region_id
+          in: query
+          schema: { type: string }
+          description: Bila diisi, hanya wilayah ini yang disinkronkan
+      responses:
+        "200":
+          description: Hasil sinkronisasi & evaluasi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  source: { type: string, example: bmkg }
+                  synced: { type: integer }
+                  evaluated: { type: integer }
+                  actions:
+                    type: array
+                    items: { type: string }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/RiskAssessment" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "502": { $ref: "#/components/responses/UpstreamError" }
+
+  /v1/audit:
+    get:
+      tags: [Audit]
+      summary: Audit log
+      description: Butuh role `admin`.
+      operationId: listAudit
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+      responses:
+        "200":
+          description: Catatan audit terpaginasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedMeta"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/AuditEntry" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PerPage:
+      name: per_page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    RegionId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, example: jateng-banjarnegara-susukan }
+    AlertId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Tidak terautentikasi
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Tidak berwenang
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Tidak ditemukan
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: Validasi gagal
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Terlalu banyak permintaan / akun terkunci
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PayloadTooLarge:
+      description: Body permintaan melebihi batas
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UpstreamError:
+      description: Gagal mengambil data dari sumber eksternal (BMKG)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string, example: VALIDATION_ERROR }
+            message: { type: string, example: "region_id wajib & level harus 1-4" }
+
+    PaginatedMeta:
+      type: object
+      properties:
+        meta:
+          type: object
+          properties:
+            page: { type: integer, example: 1 }
+            per_page: { type: integer, example: 20 }
+            total: { type: integer, example: 42 }
+            pages: { type: integer, example: 3 }
+
+    Region:
+      type: object
+      properties:
+        id: { type: string, example: jateng-banjarnegara-susukan }
+        adm4: { type: string, example: "33.04.01.2001" }
+        name: { type: string, example: "Susukan, Banjarnegara" }
+        kabupaten: { type: string, example: Banjarnegara }
+        kecamatan: { type: string, example: Susukan }
+        lat: { type: number, example: -7.501 }
+        lon: { type: number, example: 109.4423 }
+        slope_deg: { type: number, example: 32 }
+        susceptibility: { type: number, example: 88 }
+        updated_at: { type: string, format: date-time }
+
+    RainfallData:
+      type: object
+      properties:
+        region_id: { type: string }
+        source: { type: string, example: bmkg }
+        observed_at: { type: string, format: date-time }
+        rain_24h_mm: { type: number, example: 112.5 }
+        rain_72h_mm: { type: number, example: 178.5 }
+        forecast_24h_mm: { type: number, example: 40 }
+        fetched_at: { type: string, format: date-time }
+        freshness: { type: string, enum: [fresh, stale, degraded] }
+
+    RiskAssessment:
+      type: object
+      properties:
+        region_id: { type: string }
+        region_name: { type: string }
+        risk_score: { type: number, example: 67.4 }
+        level: { type: integer, minimum: 1, maximum: 4, example: 3 }
+        level_label: { type: string, enum: [NORMAL, WASPADA, SIAGA, AWAS] }
+        factors:
+          type: object
+          additionalProperties: { type: number }
+        data_freshness: { type: string }
+        triggers:
+          type: array
+          items: { type: string }
+        evaluated_at: { type: string, format: date-time }
+
+    RiskResponse:
+      allOf:
+        - $ref: "#/components/schemas/RiskAssessment"
+        - type: object
+          properties:
+            recommendation: { type: string }
+            valid_until: { type: string, format: date-time }
+
+    Alert:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        region_id: { type: string }
+        region_name: { type: string }
+        level: { type: integer, minimum: 1, maximum: 4 }
+        level_label: { type: string, enum: [NORMAL, WASPADA, SIAGA, AWAS] }
+        title: { type: string }
+        description: { type: string }
+        issued_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        source: { type: string, enum: [automatic, manual] }
+        status: { type: string, enum: [active, expired, cancelled] }
+        channels:
+          type: array
+          items: { type: string, enum: [whatsapp, sms] }
+
+    CreateAlertRequest:
+      type: object
+      required: [region_id, level, title, description]
+      properties:
+        region_id: { type: string }
+        level: { type: integer, minimum: 1, maximum: 4 }
+        title: { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        valid_hours: { type: integer, maximum: 168, default: 12 }
+        channels:
+          type: array
+          items: { type: string, enum: [whatsapp, sms] }
+
+    Report:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        lat: { type: number }
+        lon: { type: number }
+        region_id: { type: string }
+        description: { type: string }
+        severity_guess: { type: string, enum: [low, medium, high] }
+        status: { type: string, enum: [pending, verified, rejected] }
+        reporter_name: { type: string }
+        created_at: { type: string, format: date-time }
+
+    CreateReportRequest:
+      type: object
+      required: [description]
+      properties:
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lon: { type: number, minimum: -180, maximum: 180 }
+        description: { type: string, maxLength: 2000 }
+        severity_guess: { type: string, enum: [low, medium, high] }
+        reporter_name: { type: string, maxLength: 120 }
+        reporter_phone: { type: string, example: "+628123456789" }
+
+    Subscription:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        region_id: { type: string }
+        phone_masked: { type: string, example: "+6281234****789" }
+        channel: { type: string, enum: [whatsapp, sms] }
+        consent: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    CreateSubscriptionRequest:
+      type: object
+      required: [region_id, phone, consent]
+      properties:
+        region_id: { type: string }
+        phone: { type: string, example: "+628123456789" }
+        channel: { type: string, enum: [whatsapp, sms], default: whatsapp }
+        consent:
+          type: boolean
+          description: Wajib true (persetujuan UU PDP)
+
+    TokenPair:
+      type: object
+      properties:
+        token: { type: string, description: Access token }
+        refresh_token: { type: string }
+        token_type: { type: string, example: Bearer }
+        expires_in: { type: integer, example: 43200 }
+        role: { type: string, enum: [public, reporter, officer, admin, device] }
+
+    AuditEntry:
+      type: object
+      properties:
+        at: { type: string, format: date-time }
+        actor: { type: string }
+        action: { type: string }
+        detail: { type: string }
+
+security:
+  - bearerAuth: []

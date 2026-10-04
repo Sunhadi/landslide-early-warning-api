@@ -1,0 +1,32 @@
+# --- Rahasia / lingkungan ---
+.env
+.env.*
+!.env.example
+
+# --- Build & artefak ---
+bin/
+dist/
+*.exe
+*.out
+*.test
+coverage.out
+coverage.html
+coverage.*
+
+# --- Data lokal ---
+pgdata/
+*.log
+*.pid
+
+# --- Editor & OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Vendor (opsional) ---
+vendor/
+
+# --- Docker ---
+compose.override.yml

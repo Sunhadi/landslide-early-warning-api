@@ -1,0 +1,27 @@
+# Normalisasi line-ending lintas platform
+* text=auto
+
+*.go      text eol=lf
+*.sh      text eol=lf
+*.sql     text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+Dockerfile text eol=lf
+Makefile   text eol=lf
+
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+*.ps1     text eol=crlf
+
+# File biner
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.ico     binary
+*.exe     binary
+*.pdf     binary
+
+# Jangan tampilkan di statistik bahasa
+go.sum    linguist-generated
+docs/openapi.yaml linguist-detectable

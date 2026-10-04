@@ -1,0 +1,11 @@
+# Jangan salin berkas yang tidak perlu ke image
+.git
+.gitignore
+bin/
+*.exe
+*.out
+.env
+pgdata/
+*.md
+!README.md
+.github/

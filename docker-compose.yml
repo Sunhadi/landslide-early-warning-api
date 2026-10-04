@@ -1,0 +1,35 @@
+# Docker Compose untuk belajar — API + PostgreSQL (opsional).
+#
+# API saat ini memakai storage in-memory sehingga bisa jalan tanpa DB.
+# PostgreSQL disiapkan untuk pengembangan lanjutan (implementasi store.Postgres).
+services:
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      APP_ENV: development
+      PORT: "8080"
+      JWT_SECRET: ganti-di-produksi
+      PII_ENCRYPTION_KEY: ganti-di-produksi
+      FETCH_ENABLED: "true"
+      NOTIFIER_MODE: log
+      DATABASE_URL: postgres://longsor:rahasia@db:5432/longsor?sslmode=disable
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: longsor
+      POSTGRES_PASSWORD: rahasia
+      POSTGRES_DB: longsor
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+
+volumes:
+  pgdata:
