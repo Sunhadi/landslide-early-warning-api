@@ -30,3 +30,6 @@ vendor/
 
 # --- Docker ---
 compose.override.yml
+
+# --- Dokumen internal (tidak untuk publik) ---
+RENCANA_API_PERINGATAN_DINI_LONGSOR.md
