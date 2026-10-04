@@ -16,6 +16,15 @@ func (s *Server) handleOpenAPISpec(w http.ResponseWriter, _ *http.Request) {
 // swaggerHTML menyajikan Swagger UI (memuat aset dari CDN) yang membaca /openapi.yaml.
 func (s *Server) handleSwaggerUI(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// CSP khusus halaman docs: izinkan aset Swagger UI dari unpkg.com.
+	// (Middleware global memakai default-src 'self' yang akan memblokir CDN.)
+	w.Header().Set("Content-Security-Policy",
+		"default-src 'self'; "+
+			"script-src 'self' 'unsafe-inline' https://unpkg.com; "+
+			"style-src 'self' https://unpkg.com 'unsafe-inline'; "+
+			"img-src 'self' data: https://unpkg.com; "+
+			"font-src 'self' https://unpkg.com data:; "+
+			"connect-src 'self'")
 	_, _ = w.Write([]byte(swaggerPage))
 }
 

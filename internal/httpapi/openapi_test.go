@@ -194,4 +194,18 @@ func TestSwaggerUIEndpoint(t *testing.T) {
 	if !strings.Contains(body, "/openapi.yaml") {
 		t.Error("swagger harus menunjuk ke /openapi.yaml")
 	}
+	// CSP halaman docs harus mengizinkan CDN (unpkg) agar UI tampil.
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "unpkg.com") {
+		t.Errorf("CSP /docs harus mengizinkan unpkg.com, dapat: %q", csp)
+	}
+}
+
+func TestOtherEndpointsKeepStrictCSP(t *testing.T) {
+	h := newHarness(t)
+	rec := h.do(t, http.MethodGet, "/health", "", "")
+	csp := rec.Header().Get("Content-Security-Policy")
+	if csp != "default-src 'self'" {
+		t.Errorf("CSP endpoint non-docs harus tetap ketat, dapat: %q", csp)
+	}
 }
